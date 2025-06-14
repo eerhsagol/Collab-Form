@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Individual Form Response</title>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+    body { font-family: Arial; padding: 2em; background: #f4f4f4; }
+    input, select { padding: 0.5em; margin-bottom: 1em; display: block; width: 300px; }
+    label { font-weight: bold; margin-top: 1em; display: block; }
+  </style>
+</head>
+<body>
+  <h2 id="form-title">Loading Form...</h2>
+  <div id="form-fields"></div>
+
+  <script>
+    const socket = io('http://localhost:3000');
+    const urlParams = new URLSearchParams(window.location.search);
+    const formId = urlParams.get('formid');
+    if (!formId) {
+      alert('Missing formId in URL. Example: index.html?formId=3');
+    }
+
+    let responseId;
+    const fieldMap = {};
+
+    // Step 1: Get responseId for this user
+    fetch(`http://localhost:3000/api/forms/${formId}/start`, { method: 'POST' })
+      .then(res => res.json())
+      .then(data => {
+        responseId = data.responseId;
+        loadForm();
+      })
+      .catch(err => console.error('Error creating response:', err));
+
+    // Step 2: Load form structure
+    function loadForm() {
+      fetch(`http://localhost:3000/api/forms/${formId}`)
+        .then(res => res.json())
+        .then(data => {
+          document.getElementById('form-title').innerText = data.form.title;
+          const container = document.getElementById('form-fields');
+
+          data.fields.forEach(field => {
+            const label = document.createElement('label');
+            label.innerText = field.label;
+            label.setAttribute('for', field.id);
+
+            let input;
+            if (field.type === 'dropdown') {
+              input = document.createElement('select');
+              input.innerHTML = '<option value="">--Select--</option>';
+              (field.options || '').split(',').forEach(opt => {
+                const option = document.createElement('option');
+                option.value = opt.trim();
+                option.innerText = opt.trim();
+                input.appendChild(option);
+              });
+            } else {
+              input = document.createElement('input');
+              input.type = field.type;
+            }
+
+            input.id = field.id;
+            container.appendChild(label);
+            container.appendChild(input);
+            fieldMap[field.id] = input;
+
+            input.addEventListener('input', () => {
+              socket.emit('update_field', {
+                fieldId: field.id,
+                value: input.value,
+                responseId: responseId
+              });
+            });
+          });
+        })
+        .catch(err => console.error('Error loading form:', err));
+    }
+
+    // Step 3: Listen for updates
+    socket.on('field_updated', ({ fieldId, value }) => {
+      const input = fieldMap[fieldId];
+      if (input && document.activeElement !== input) {
+        input.value = value;
+      }
+    });
+  </script>
+</body>
+</html>
